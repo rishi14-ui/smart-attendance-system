@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Fingerprint, Activity, User, CheckCircle, XCircle } from 'lucide-react';
+import { Camera, Fingerprint, Activity, User, CheckCircle, XCircle, Download, FileSpreadsheet } from 'lucide-react';
+import { exportToCSV, exportToExcel, saveAttendanceRecord, getTodaysAttendanceRecords, AttendanceRecord } from '../utils/attendanceExport';
 
 export const AttendanceCapture: React.FC = () => {
   const [activeMethod, setActiveMethod] = useState('face');
   const [isCapturing, setIsCapturing] = useState(false);
   const [recognizedStudent, setRecognizedStudent] = useState<any>(null);
   const [captureProgress, setCaptureProgress] = useState(0);
+  const [attendanceMarked, setAttendanceMarked] = useState(false);
+  const [showExportOptions, setShowExportOptions] = useState(false);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -22,6 +25,7 @@ export const AttendanceCapture: React.FC = () => {
                 class: '10-A',
                 confidence: 98.5
               });
+              setAttendanceMarked(false);
             }, 500);
             return 100;
           }
@@ -36,6 +40,50 @@ export const AttendanceCapture: React.FC = () => {
     setIsCapturing(true);
     setCaptureProgress(0);
     setRecognizedStudent(null);
+    setAttendanceMarked(false);
+    setAttendanceMarked(false);
+  };
+
+  const markAttendance = () => {
+    if (!recognizedStudent) return;
+
+    const now = new Date();
+    const attendanceRecord: AttendanceRecord = {
+      studentId: recognizedStudent.id,
+      studentName: recognizedStudent.name,
+      class: recognizedStudent.class,
+      date: now.toISOString().split('T')[0],
+      time: now.toLocaleTimeString(),
+      method: activeMethod as 'face' | 'fingerprint' | 'motion',
+      confidence: recognizedStudent.confidence,
+      status: 'present'
+    };
+
+    // Save to localStorage
+    saveAttendanceRecord(attendanceRecord);
+    setAttendanceMarked(true);
+    
+    // Show success message
+    alert(`Attendance marked successfully for ${recognizedStudent.name}!`);
+  };
+
+  const exportTodaysAttendance = (format: 'csv' | 'excel') => {
+    const todaysRecords = getTodaysAttendanceRecords();
+    
+    if (todaysRecords.length === 0) {
+      alert('No attendance records found for today.');
+      return;
+    }
+
+    const filename = `attendance_${new Date().toISOString().split('T')[0]}`;
+    
+    if (format === 'csv') {
+      exportToCSV(todaysRecords, `${filename}.csv`);
+    } else {
+      exportToExcel(todaysRecords, `${filename}.xlsx`);
+    }
+    
+    setShowExportOptions(false);
   };
 
   const methods = [
@@ -105,7 +153,37 @@ export const AttendanceCapture: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-xl p-6">
-          <h3 className="text-xl font-bold text-white mb-6">Live Capture Feed</h3>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-bold text-white">Live Capture Feed</h3>
+            <div className="relative">
+              <button
+                onClick={() => setShowExportOptions(!showExportOptions)}
+                className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-all duration-300"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export Today</span>
+              </button>
+              
+              {showExportOptions && (
+                <div className="absolute right-0 top-12 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-10 min-w-48">
+                  <button
+                    onClick={() => exportTodaysAttendance('csv')}
+                    className="w-full flex items-center space-x-2 px-4 py-3 text-white hover:bg-slate-700 transition-colors rounded-t-lg"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>Export as CSV</span>
+                  </button>
+                  <button
+                    onClick={() => exportTodaysAttendance('excel')}
+                    className="w-full flex items-center space-x-2 px-4 py-3 text-white hover:bg-slate-700 transition-colors rounded-b-lg"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>Export as Excel</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
           <div className="relative">
             <div className="aspect-video bg-gradient-to-br from-slate-900 to-slate-800 rounded-lg flex items-center justify-center border-2 border-dashed border-slate-600">
               {isCapturing ? (
@@ -176,19 +254,70 @@ export const AttendanceCapture: React.FC = () => {
                   <div>
                     <p className="text-slate-400">Status</p>
                     <p className="text-green-400 font-medium">Present</p>
-                  </div>
-                </div>
-
-                <button className="w-full mt-4 px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors">
-                  Mark Attendance
+              <div className="flex space-x-3 mt-6">
+                <button 
+                  onClick={markAttendance}
+                  disabled={attendanceMarked}
+                  className={`flex-1 px-4 py-2 font-medium rounded-lg transition-colors ${
+                    attendanceMarked 
+                      ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  {attendanceMarked ? 'Attendance Marked ✓' : 'Mark Attendance'}
+                </button>
+                <button 
+                  onClick={() => exportToCSV([{
+                    studentId: recognizedStudent.id,
+                    studentName: recognizedStudent.name,
+                    class: recognizedStudent.class,
+                    date: new Date().toISOString().split('T')[0],
+                    time: new Date().toLocaleTimeString(),
+                    method: activeMethod as 'face' | 'fingerprint' | 'motion',
+                    confidence: recognizedStudent.confidence,
+                    status: 'present'
+                  }], `${recognizedStudent.name}_attendance_${new Date().toISOString().split('T')[0]}.csv`)}
+                  className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Export Record
                 </button>
               </div>
+              
+              {attendanceMarked && (
+                <div className="mt-4 p-3 bg-green-900/20 border border-green-500/30 rounded-lg">
+                  <p className="text-green-400 text-sm font-medium">
+                    ✓ Attendance has been recorded and saved to the system
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-12">
               <User className="w-16 h-16 text-slate-400 mx-auto mb-4" />
               <p className="text-slate-400">No student recognized yet</p>
               <p className="text-sm text-slate-500 mt-2">Start capture to begin recognition</p>
+              
+              {/* Show today's attendance count */}
+              <div className="mt-6 p-4 bg-slate-700/30 rounded-lg">
+                <p className="text-slate-300 text-sm">Today's Attendance Records</p>
+                <p className="text-white font-bold text-2xl">{getTodaysAttendanceRecords().length}</p>
+                <div className="flex justify-center space-x-2 mt-3">
+                  <button
+                    onClick={() => exportTodaysAttendance('csv')}
+                    className="flex items-center space-x-1 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>CSV</span>
+                  </button>
+                  <button
+                    onClick={() => exportTodaysAttendance('excel')}
+                    className="flex items-center space-x-1 px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Excel</span>
+                  </button>
+
+              </div>
             </div>
           )}
         </div>

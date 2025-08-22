@@ -1,15 +1,10 @@
 import React, { useState } from 'react';
 import { Database, Search, Download, Calendar, User, Clock, TrendingUp } from 'lucide-react';
+import { getAllAttendanceRecords, exportToCSV, exportToExcel, AttendanceRecord as ExportAttendanceRecord } from '../utils/attendanceExport';
 
-interface AttendanceRecord {
-  id: string;
-  studentId: string;
-  studentName: string;
-  class: string;
-  timestamp: string;
-  method: 'face' | 'fingerprint' | 'motion';
-  confidence: number;
-  status: 'present' | 'late' | 'absent';
+interface AttendanceRecord extends ExportAttendanceRecord {
+  id?: string;
+  timestamp?: string;
 }
 
 export const AttendanceDatabase: React.FC = () => {
@@ -17,13 +12,22 @@ export const AttendanceDatabase: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedMethod, setSelectedMethod] = useState('all');
 
-  const attendanceRecords: AttendanceRecord[] = [
+  // Get real attendance records from localStorage and merge with sample data
+  const realRecords = getAllAttendanceRecords().map((record, index) => ({
+    ...record,
+    id: `real_${index}`,
+    timestamp: `${record.date}T${record.time}`
+  }));
+
+  const sampleRecords: AttendanceRecord[] = [
     {
       id: '1',
       studentId: 'ST001234',
       studentName: 'Emma Thompson',
       class: '10-A',
       timestamp: '2024-01-15T08:15:30Z',
+      date: '2024-01-15',
+      time: '08:15:30',
       method: 'face',
       confidence: 98.5,
       status: 'present'
@@ -34,6 +38,8 @@ export const AttendanceDatabase: React.FC = () => {
       studentName: 'James Wilson',
       class: '10-A',
       timestamp: '2024-01-15T08:17:45Z',
+      date: '2024-01-15',
+      time: '08:17:45',
       method: 'fingerprint',
       confidence: 99.2,
       status: 'present'
@@ -44,6 +50,8 @@ export const AttendanceDatabase: React.FC = () => {
       studentName: 'Sarah Davis',
       class: '10-B',
       timestamp: '2024-01-15T08:20:12Z',
+      date: '2024-01-15',
+      time: '08:20:12',
       method: 'motion',
       confidence: 94.7,
       status: 'present'
@@ -54,6 +62,8 @@ export const AttendanceDatabase: React.FC = () => {
       studentName: 'Michael Brown',
       class: '10-B',
       timestamp: '2024-01-15T09:05:22Z',
+      date: '2024-01-15',
+      time: '09:05:22',
       method: 'face',
       confidence: 97.8,
       status: 'late'
@@ -64,11 +74,16 @@ export const AttendanceDatabase: React.FC = () => {
       studentName: 'Lisa Anderson',
       class: '11-A',
       timestamp: '2024-01-15T08:12:55Z',
+      date: '2024-01-15',
+      time: '08:12:55',
       method: 'fingerprint',
       confidence: 98.9,
       status: 'present'
     }
   ];
+
+  // Combine real records with sample records
+  const attendanceRecords = [...realRecords, ...sampleRecords];
 
   const filteredRecords = attendanceRecords.filter(record => {
     const matchesSearch = record.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -104,28 +119,43 @@ export const AttendanceDatabase: React.FC = () => {
   };
 
   const exportToExcel = () => {
-    // Simulate Excel export
-    const csvContent = [
-      ['Student ID', 'Name', 'Class', 'Date', 'Time', 'Method', 'Confidence', 'Status'],
-      ...filteredRecords.map(record => [
-        record.studentId,
-        record.studentName,
-        record.class,
-        new Date(record.timestamp).toLocaleDateString(),
-        new Date(record.timestamp).toLocaleTimeString(),
-        record.method,
-        `${record.confidence}%`,
-        record.status
-      ])
-    ].map(row => row.join(',')).join('\n');
+    if (filteredRecords.length === 0) {
+      alert('No records to export.');
+      return;
+    }
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `attendance_${selectedDate}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    const exportRecords: ExportAttendanceRecord[] = filteredRecords.map(record => ({
+      studentId: record.studentId,
+      studentName: record.studentName,
+      class: record.class,
+      date: record.date || (record.timestamp ? new Date(record.timestamp).toISOString().split('T')[0] : ''),
+      time: record.time || (record.timestamp ? new Date(record.timestamp).toLocaleTimeString() : ''),
+      method: record.method,
+      confidence: record.confidence,
+      status: record.status
+    }));
+
+    exportToExcel(exportRecords, `attendance_database_${selectedDate}.xlsx`);
+  };
+
+  const exportToCSVFile = () => {
+    if (filteredRecords.length === 0) {
+      alert('No records to export.');
+      return;
+    }
+
+    const exportRecords: ExportAttendanceRecord[] = filteredRecords.map(record => ({
+      studentId: record.studentId,
+      studentName: record.studentName,
+      class: record.class,
+      date: record.date || (record.timestamp ? new Date(record.timestamp).toISOString().split('T')[0] : ''),
+      time: record.time || (record.timestamp ? new Date(record.timestamp).toLocaleTimeString() : ''),
+      method: record.method,
+      confidence: record.confidence,
+      status: record.status
+    }));
+
+    exportToCSV(exportRecords, `attendance_database_${selectedDate}.csv`);
   };
 
   return (
@@ -135,13 +165,22 @@ export const AttendanceDatabase: React.FC = () => {
           <h2 className="text-3xl font-bold text-white mb-2">Attendance Database</h2>
           <p className="text-slate-400">Comprehensive attendance records and reporting</p>
         </div>
-        <button 
-          onClick={exportToExcel}
-          className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-green-600 to-blue-600 text-white font-medium rounded-lg hover:from-green-700 hover:to-blue-700 transition-all duration-300"
-        >
-          <Download className="w-5 h-5" />
-          <span>Export to Excel</span>
-        </button>
+        <div className="flex items-center space-x-3">
+          <button 
+            onClick={exportToCSVFile}
+            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-all duration-300"
+          >
+            <Download className="w-5 h-5" />
+            <span>Export CSV</span>
+          </button>
+          <button 
+            onClick={exportToExcel}
+            className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-all duration-300"
+          >
+            <Download className="w-5 h-5" />
+            <span>Export Excel</span>
+          </button>
+        </div>
       </div>
 
       {/* Summary Statistics */}
@@ -275,12 +314,8 @@ export const AttendanceDatabase: React.FC = () => {
                   </td>
                   <td className="py-4 px-4">
                     <div>
-                      <p className="text-white text-sm">
-                        {new Date(record.timestamp).toLocaleDateString()}
-                      </p>
-                      <p className="text-slate-400 text-sm">
-                        {new Date(record.timestamp).toLocaleTimeString()}
-                      </p>
+                      <p className="text-white text-sm">{record.date || (record.timestamp ? new Date(record.timestamp).toLocaleDateString() : 'N/A')}</p>
+                      <p className="text-slate-400 text-sm">{record.time || (record.timestamp ? new Date(record.timestamp).toLocaleTimeString() : 'N/A')}</p>
                     </div>
                   </td>
                   <td className="py-4 px-4">
